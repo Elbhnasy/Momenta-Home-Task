@@ -1,0 +1,57 @@
+[
+  {
+    "file": "Answer 1.mp3",
+    "expected_score": 3,
+    "expected_probe": true,
+    "expected_coverage": {
+      "Diagnostic method": "covered",
+      "Data access (EF Core)": "covered",
+      "Async & concurrency": "missing",
+      "Caching & performance": "covered",
+      "Tradeoff & communication": "covered"
+    },
+    "expected_competencies": [
+      "Diagnostic method",
+      "Data access (EF Core)",
+      "Caching & performance",
+      "Tradeoff & communication"
+    ],
+    "note": "Systematic, measures first (APM/logs), strong EF Core (N+1, missing index, AsNoTracking, inspects generated SQL), solid caching (in-memory then Redis with an invalidation rule). Never mentions async/await despite the question naming it explicitly. Rubric level 3 is literally 'correct on the common cases; some gaps under load' - async/thread-pool starvation IS the under-load failure mode, so this is a textual match, not just a deduction; level 4 explicitly requires DB+async+caching as a set, which rules it out since async is entirely absent. Single gap (Async & concurrency) -> the follow-up probe should fire here.",
+    "labelled_from": "cross-validated transcript (ElevenLabs Scribe, shipped STT, agreeing with Groq whisper-large-v3 and OpenAI gpt-4o-transcribe/whisper-1) + rubric-based review, not a human ear-listen"
+  },
+  {
+    "file": "Answer 2.mp3",
+    "expected_score": 2,
+    "expected_probe": false,
+    "expected_coverage": {
+      "Diagnostic method": "partial",
+      "Data access (EF Core)": "partial",
+      "Async & concurrency": "missing",
+      "Caching & performance": "partial",
+      "Tradeoff & communication": "partial"
+    },
+    "expected_competencies": [
+      "Diagnostic method",
+      "Data access (EF Core)",
+      "Caching & performance",
+      "Tradeoff & communication"
+    ],
+    "note": "Touches 4 of 5 competencies shallowly, none with real measurement or EF-specific terminology, and Tradeoff & communication is thin but real ('I'll start with database, probably because that's the thing most likely to be slow' states an assumption and names what they'd do first + why). Async & concurrency is named ('we should make the code async so blocking doesn't happen') but immediately followed by an explicit disclaimer of uncertainty about the load-related mechanism the rubric actually asks about ('honestly I'm not very sure how it affects things under load') - per the mention-is-not-coverage rule (PLAN.md SS10), an explicit statement of uncertainty overrides the mention, so this is missing, not partial. Matches the rubric's 'names a concept but can't apply it' closely across the board. Diffuse gaps (4 partial, 1 missing) -> the follow-up probe should skip and score now.",
+    "labelled_from": "cross-validated transcript (ElevenLabs Scribe, shipped STT, agreeing with Groq whisper-large-v3 and OpenAI gpt-4o-transcribe/whisper-1) + rubric-based review, not a human ear-listen"
+  },
+  {
+    "file": "Answer 3.mp3",
+    "expected_score": 1,
+    "expected_probe": false,
+    "expected_coverage": {
+      "Diagnostic method": "missing",
+      "Data access (EF Core)": "missing",
+      "Async & concurrency": "missing",
+      "Caching & performance": "missing",
+      "Tradeoff & communication": "missing"
+    },
+    "expected_competencies": [],
+    "note": "'Restart the server' then 'add more RAM / get a stronger server' - a near-verbatim match for the rubric's own stated 1-2 anti-pattern. Explicitly disclaims EF Core/database-query knowledge; never mentions async or caching. No competency is meaningfully touched. >=2 missing -> the follow-up probe should skip (one probe cannot rescue this).",
+    "labelled_from": "cross-validated transcript (ElevenLabs Scribe, shipped STT, agreeing with Groq whisper-large-v3 and OpenAI gpt-4o-transcribe/whisper-1) + rubric-based review, not a human ear-listen"
+  }
+]
