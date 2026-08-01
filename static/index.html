@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Screener</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%234f46e5'/><rect x='13' y='8' width='6' height='11' rx='3' fill='white'/><path d='M10 17a6 6 0 0 0 12 0' stroke='white' stroke-width='2' fill='none' stroke-linecap='round'/></svg>">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<main>
+
+<ol class="rail" id="progress" hidden>
+  <li data-step="question">Question</li>
+  <li data-step="followup" hidden>Follow-up</li>
+  <li data-step="report">Feedback</li>
+</ol>
+
+<section class="screen card welcome" id="screenWelcome">
+  <p class="brand">Voice Screener</p>
+  <h1 id="welcomeHeading" tabindex="-1">Technical screening interview</h1>
+  <p class="lede">
+    This interview contains a small number of technical questions.
+    Please answer naturally, as if you were speaking with a human interviewer.
+  </p>
+  <button class="btn btn-primary btn-lg" id="startBtn">Start Interview</button>
+  <p class="hint">
+    You will be asked for microphone access when the interview begins.
+    You can upload a recorded answer instead.
+  </p>
+  <div class="alert" id="welcomeError" role="alert"></div>
+</section>
+
+<section class="screen" id="screenInterview" hidden>
+  <div class="card">
+    <div class="interviewer-note" id="interviewerNote" hidden>
+      <p id="interviewerNoteText"></p>
+    </div>
+
+    <p class="question-meta" id="questionMeta">Question 1 of 1</p>
+    <h1 class="question-text" id="question" tabindex="-1" dir="auto">Loading question&hellip;</h1>
+    <audio id="questionAudio" controls></audio>
+
+    <div class="actions">
+      <button class="btn btn-primary" id="recordBtn" aria-pressed="false" disabled>
+        <span class="dot" aria-hidden="true"></span><span id="recordLabel">Record Answer</span>
+      </button>
+      <input type="file" class="file-input" id="fileInput" accept="audio/*">
+      <label class="btn btn-secondary" for="fileInput">Upload Audio</label>
+    </div>
+
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+    <div class="alert" id="error" role="alert"></div>
+  </div>
+</section>
+
+<section class="screen card thinking" id="screenThinking" hidden>
+  <h1 class="visually-hidden" id="thinkingHeading" tabindex="-1">Evaluating your answer</h1>
+  <div class="spinner" aria-hidden="true"></div>
+  <p id="thinkingText" role="status" aria-live="polite"></p>
+</section>
+
+<section class="screen" id="screenReport" hidden>
+  <div class="card">
+    <div class="report-header">
+      <p class="brand">Voice Screener</p>
+      <h1 id="reportHeading" tabindex="-1">Interview Complete</h1>
+
+      <div class="score" id="scoreBlock">
+        <p class="stars" id="stars" aria-hidden="true"></p>
+        <p class="score-value"><span id="scoreNumber"></span><small> / 5</small></p>
+        <p class="visually-hidden" id="scoreSr"></p>
+      </div>
+
+      <p class="summary" id="summary" dir="auto"></p>
+      <audio id="replyAudio" controls></audio>
+    </div>
+
+    <div class="report-section" id="strengthsSection">
+      <h2>Strengths</h2>
+      <ul class="feedback-list positive" id="strengthsList"></ul>
+    </div>
+
+    <div class="report-section" id="improvementsSection">
+      <h2>Areas for Improvement</h2>
+      <ul class="feedback-list caution" id="improvementsList"></ul>
+    </div>
+
+    <div class="report-section" id="recommendationSection">
+      <h2>Recommendation</h2>
+      <div class="recommendation">
+        <p class="verdict" id="recommendationText"></p>
+        <p class="basis" id="recommendationBasis"></p>
+      </div>
+    </div>
+
+    <div class="report-footer">
+      <button class="btn btn-secondary" id="restartBtn">Start New Interview</button>
+    </div>
+  </div>
+</section>
+
+<details class="diagnostics" id="diagnostics" hidden>
+  <summary>Developer Diagnostics</summary>
+  <div class="panel" id="diagnosticsPanel"></div>
+</details>
+
+</main>
+
+<script>
+// QUESTION.md yields exactly one question. Nothing below assumes that number, so serving more
+// questions later is a data change rather than a UI rewrite.
+const TOTAL_QUESTIONS = 1;
+
+const THINKING_STEPS = [
+  "Analyzing your answer…",
+  "Reviewing it against the rubric…",
+  "Preparing your feedback…"
+];
+
+const el = id => document.getElementById(id);
+
+const statusEl = el("status");
+const errorEl = el("error");
+const recordBtn = el("recordBtn");
+const recordLabel = el("recordLabel");
+const fileInput = el("fileInput");
+const questionEl = el("question");
+const questionAudio = el("questionAudio");
+const followupStep = document.querySelector('#progress [data-step="followup"]');
+
+let mediaRecorder = null;
+let chunks = [];
+let threadId = null;
+let turnCount = 0;
+let idleRecordLabel = "Record Answer";
+let thinkingTimer = null;
+const diagnosticTurns = [];
+
+let questionText = "";
+let questionAudioB64 = "";
+let questionError = "";
+
+function setStatus(text) { statusEl.textContent = text; }
+function setError(text) { errorEl.textContent = text; }
+
+function setAudio(audioEl, b64) {
+  // b64 is empty when TTS failed — the turn still carries its text, so show that rather
+  // than an audio element wired to a broken source.
+  audioEl.hidden = !b64;
+  if (b64) audioEl.src = "data:audio/mp3;base64," + b64;
+}
+
+function playAudio(audioEl) {
+  // Autoplay can still be refused; the controls are right there if it is.
+  if (!audioEl.hidden) audioEl.play().catch(() => {});
+}
+
+/* ------------------------------------------------------------------ screens */
+
+const SCREENS = {
+  welcome: ["screenWelcome", "welcomeHeading"],
+  interview: ["screenInterview", "question"],
+  thinking: ["screenThinking", "thinkingHeading"],
+  report: ["screenReport", "reportHeading"]
+};
+
+function showScreen(name) {
+  Object.entries(SCREENS).forEach(([key, [section]]) => { el(section).hidden = key !== name; });
+  el("progress").hidden = name === "welcome";
+  el(SCREENS[name][1]).focus();
+}
+
+function setStage(stage) {
+  const order = ["question", "followup", "report"];
+  const current = order.indexOf(stage);
+  order.forEach((step, index) => {
+    const item = document.querySelector(`#progress [data-step="${step}"]`);
+    item.dataset.state = index < current ? "done" : "upcoming";
+    if (index === current) item.setAttribute("aria-current", "step");
+    else item.removeAttribute("aria-current");
+  });
+}
+
+function startThinking() {
+  let index = 0;
+  el("thinkingText").textContent = THINKING_STEPS[0];
+  showScreen("thinking");
+  thinkingTimer = setInterval(() => {
+    index = Math.min(index + 1, THINKING_STEPS.length - 1);
+    el("thinkingText").textContent = THINKING_STEPS[index];
+  }, 4000);
+}
+
+function stopThinking() {
+  clearInterval(thinkingTimer);
+  thinkingTimer = null;
+}
+
+/* ----------------------------------------------------------------- question */
+
+const questionReady = fetch("/api/question")
+  .then(async res => {
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || "");
+    return body;
+  })
+  .then(q => { questionText = q.question; questionAudioB64 = q.audio_b64; })
+  .catch(err => {
+    questionError = err.message
+      || "Could not load the question — is the server running with its API keys set?";
+  });
+
+function renderQuestion() {
+  el("interviewerNote").hidden = true;
+  el("questionMeta").textContent = `Question 1 of ${TOTAL_QUESTIONS}`;
+  questionEl.textContent = questionText;
+  setAudio(questionAudio, questionAudioB64);
+}
+
+el("startBtn").addEventListener("click", async () => {
+  const startBtn = el("startBtn");
+  startBtn.disabled = true;
+  await questionReady;
+  if (questionError) {
+    el("welcomeError").textContent = questionError;
+    startBtn.disabled = false;
+    return;
+  }
+  renderQuestion();
+  setStage("question");
+  showScreen("interview");
+  // Asking for the microphone here keeps the permission prompt off the landing page, and the
+  // click counts as the user gesture that lets the question speak itself.
+  await initRecorder();
+  playAudio(questionAudio);
+  startBtn.disabled = false;
+});
+
+/* ----------------------------------------------------------------- capture */
+
+async function initRecorder() {
+  if (mediaRecorder) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const preferredTypes = [
+      "audio/webm;codecs=opus",
+      "audio/mp4;codecs=mp4a.40.2",
+      "audio/mp4",
+      "audio/webm"
+    ];
+    const mimeType = preferredTypes.find(type => MediaRecorder.isTypeSupported(type));
+    mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    mediaRecorder.ondataavailable = e => chunks.push(e.data);
+    mediaRecorder.onstop = () => {
+      const type = mediaRecorder.mimeType || "audio/webm";
+      const extension = type.startsWith("audio/mp4") ? "mp4" : "webm";
+      submitAudio(new Blob(chunks, { type }), `recording.${extension}`);
+    };
+    recordBtn.disabled = false;
+  } catch (err) {
+    console.warn("Microphone unavailable:", err);
+    setStatus("Microphone unavailable — use “Upload Audio” to submit a recorded answer instead.");
+  }
+}
+
+function setRecording(on) {
+  recordBtn.classList.toggle("recording", on);
+  recordBtn.setAttribute("aria-pressed", String(on));
+  recordLabel.textContent = on ? "Stop Recording" : idleRecordLabel;
+}
+
+function setControlsEnabled(on) {
+  recordBtn.disabled = !on || !mediaRecorder;
+  fileInput.disabled = !on;
+}
+
+recordBtn.addEventListener("click", () => {
+  if (!mediaRecorder) return;
+  if (mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+    setRecording(false);
+  } else {
+    chunks = [];
+    mediaRecorder.start();
+    setRecording(true);
+    setStatus("Recording — speak naturally, then stop when you are done.");
+    setError("");
+  }
+});
+
+fileInput.addEventListener("change", () => {
+  if (!fileInput.files.length) return;
+  const file = fileInput.files[0];
+  fileInput.value = "";  // so the same file can be picked again after an error
+  submitAudio(file, file.name);
+});
+
+/* --------------------------------------------------------------- submission */
+
+async function submitAudio(blob, filename) {
+  setError("");
+  setControlsEnabled(false);
+  startThinking();
+
+  const form = new FormData();
+  form.append("audio", blob, filename);
+
+  const url = threadId ? `/api/screening/${threadId}/resume` : "/api/screening/start";
+
+  try {
+    const res = await fetch(url, { method: "POST", body: form });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || ("Request failed with status " + res.status));
+    }
+    const turn = await res.json();
+    threadId = turn.thread_id;
+    turnCount += 1;
+
+    stopThinking();
+    renderDiagnostics(turn, turnCount);
+
+    if (turn.status === "awaiting_followup") renderFollowup(turn);
+    else renderReport(turn);
+  } catch (err) {
+    stopThinking();
+    showScreen("interview");
+    setStatus("");
+    setError(err.message);
+    setControlsEnabled(true);
+  }
+}
+
+/* ------------------------------------------------------------- candidate UI */
+
+function renderFollowup(turn) {
+  followupStep.hidden = false;
+  setStage("followup");
+
+  el("interviewerNoteText").textContent =
+    "Thank you. I’d like to explore one area in a little more detail.";
+  el("interviewerNote").hidden = false;
+  el("questionMeta").textContent = "Follow-up question";
+  questionEl.textContent = turn.evaluation.followup_question || "";
+  setAudio(questionAudio, turn.audio_b64);
+
+  idleRecordLabel = "Record Follow-up Answer";
+  setRecording(false);
+  setControlsEnabled(true);
+  setStatus("");
+  showScreen("interview");
+  playAudio(questionAudio);
+}
+
+function renderReport(turn) {
+  const ev = turn.evaluation;
+  const score = ev.score;
+  const hasScore = typeof score === "number";
+  setStage("report");
+
+  el("scoreBlock").hidden = !hasScore;
+  el("recommendationSection").hidden = !hasScore;
+  if (hasScore) {
+    el("stars").textContent = "★".repeat(score) + "☆".repeat(5 - score);
+    el("scoreNumber").textContent = String(score);
+    el("scoreSr").textContent = `Overall score: ${score} out of 5.`;
+    el("recommendationText").textContent = recommendationFor(score);
+    el("recommendationBasis").textContent = `Based on an overall score of ${score} / 5.`;
+  }
+
+  el("summary").textContent = ev.justification || turn.spoken_text;
+  setAudio(el("replyAudio"), turn.audio_b64);
+
+  const strengths = ev.coverage.filter(c => c.status === "covered");
+  const gaps = ev.coverage.filter(c => c.status !== "covered");
+  renderFeedback(el("strengthsList"), strengths, "✓");
+  renderFeedback(el("improvementsList"), gaps, "•");
+  el("strengthsSection").hidden = !strengths.length;
+  el("improvementsSection").hidden = !gaps.length;
+
+  showScreen("report");
+  playAudio(el("replyAudio"));
+}
+
+// The schema carries no recommendation, so this maps the model's score onto hiring language.
+// The report states the score it was derived from so the derivation stays visible.
+function recommendationFor(score) {
+  if (score >= 4) return "Proceed to the next interview stage";
+  if (score === 3) return "Borderline — a second technical round is advised";
+  return "Needs stronger backend fundamentals";
+}
+
+function renderFeedback(list, items, marker) {
+  list.replaceChildren();
+  items.forEach(item => {
+    const row = document.createElement("li");
+
+    const badge = document.createElement("span");
+    badge.className = "marker";
+    badge.setAttribute("aria-hidden", "true");
+    badge.textContent = marker;
+
+    const label = document.createElement("span");
+    label.className = "label";
+    label.textContent = item.competency;
+
+    const body = document.createElement("div");
+    body.appendChild(label);
+
+    // The note is interface English; the evidence is the candidate's own words and may be
+    // Arabic. They are separate elements so dir="auto" resolves each one on its own text —
+    // one mixed element would lay the whole line out left-to-right.
+    const note = statusNote(item);
+    if (note) {
+      const detail = document.createElement("span");
+      detail.className = "detail";
+      detail.textContent = note;
+      body.appendChild(detail);
+    }
+    if (item.evidence) {
+      const quote = document.createElement("q");
+      quote.className = "quote";
+      quote.dir = "auto";
+      quote.textContent = item.evidence;
+      body.appendChild(quote);
+    }
+
+    row.append(badge, body);
+    list.appendChild(row);
+  });
+}
+
+function statusNote(item) {
+  if (item.status === "partial") return "Touched on briefly:";
+  if (item.status === "missing") return "Not addressed in this answer.";
+  return "";
+}
+
+el("restartBtn").addEventListener("click", () => {
+  threadId = null;
+  turnCount = 0;
+  diagnosticTurns.length = 0;
+  el("diagnosticsPanel").replaceChildren();
+  el("diagnostics").hidden = true;
+  el("diagnostics").open = false;
+  followupStep.hidden = true;
+
+  idleRecordLabel = "Record Answer";
+  setRecording(false);
+  setControlsEnabled(true);
+  setStatus("");
+  setError("");
+  renderQuestion();
+  setStage("question");
+  showScreen("interview");
+  playAudio(questionAudio);
+});
+
+/* -------------------------------------------------------------- diagnostics */
+
+function renderDiagnostics(turn, index) {
+  const ev = turn.evaluation;
+  const block = document.createElement("details");
+  const heading = document.createElement("summary");
+  heading.textContent = `Turn ${index} — ${index === 1 ? "initial answer" : "follow-up answer"}`;
+  block.appendChild(heading);
+
+  block.append(
+    textPanel("Transcript", turn.transcript),
+    tablePanel("Retrieved Rubric Chunks", ["Competency", "Doc", "Score"],
+      ev.retrieved.map(c => [c.competency, c.doc_id, Number(c.score).toFixed(3)])),
+    tablePanel("Coverage", ["Competency", "Status", "Evidence"],
+      ev.coverage.map(c => [c.competency, c.status, c.evidence ?? ""])),
+    textPanel("Decision",
+      `probe=${ev.decision.probe}, target=${ev.decision.target ?? "-"} — ${ev.decision.reason}`),
+    prePanel("Raw Evaluation", JSON.stringify(withoutAudioPayload(turn), null, 2)),
+    textPanel("Internal Metadata", [
+      `thread_id: ${turn.thread_id}`,
+      `status: ${turn.status}`,
+      `spoken_text: ${turn.spoken_text}`,
+      `claims_summary_en: ${ev.claims_summary_en}`
+    ].join("\n"))
+  );
+
+  diagnosticTurns.push(block);
+  el("diagnosticsPanel").replaceChildren(...diagnosticTurns);
+  el("diagnostics").hidden = false;
+}
+
+function withoutAudioPayload(turn) {
+  // The mp3 is playable above; a megabyte of base64 in a <pre> is noise, not diagnostics.
+  const kb = Math.round(turn.audio_b64.length * 3 / 4 / 1024);
+  return { ...turn, audio_b64: turn.audio_b64 ? `<${kb} KB of mp3>` : "" };
+}
+
+function panel(title, content) {
+  const wrapper = document.createElement("details");
+  const heading = document.createElement("summary");
+  heading.textContent = title;
+  const body = document.createElement("div");
+  body.className = "body";
+  body.appendChild(content);
+  wrapper.append(heading, body);
+  return wrapper;
+}
+
+function textPanel(title, text) {
+  const paragraph = document.createElement("p");
+  paragraph.dir = "auto";
+  paragraph.textContent = text;
+  return panel(title, paragraph);
+}
+
+function prePanel(title, text) {
+  const block = document.createElement("pre");
+  block.textContent = text;
+  return panel(title, block);
+}
+
+function tablePanel(title, headers, rows) {
+  const head = document.createElement("tr");
+  headers.forEach(name => {
+    const cell = document.createElement("th");
+    cell.textContent = name;
+    head.appendChild(cell);
+  });
+
+  const thead = document.createElement("thead");
+  thead.appendChild(head);
+  const tbody = document.createElement("tbody");
+  rows.forEach(values => appendRow(tbody, values));
+
+  const table = document.createElement("table");
+  table.append(thead, tbody);
+  const wrapper = document.createElement("div");
+  wrapper.className = "table-wrap";
+  wrapper.appendChild(table);
+  return panel(title, wrapper);
+}
+
+function appendRow(body, values) {
+  const row = document.createElement("tr");
+  values.forEach(value => {
+    const cell = document.createElement("td");
+    cell.dir = "auto";
+    cell.textContent = String(value);
+    row.appendChild(cell);
+  });
+  body.appendChild(row);
+}
+</script>
+</body>
+</html>
