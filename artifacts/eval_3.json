@@ -1,0 +1,93 @@
+{
+  "provider_configuration": {
+    "stt": {
+      "provider": "elevenlabs",
+      "model": "scribe_v1"
+    },
+    "llm": {
+      "provider": "groq",
+      "model": "openai/gpt-oss-120b",
+      "temperature": 0.0,
+      "top_p": 1.0,
+      "seed": 20260801,
+      "stages": {
+        "summarize": {
+          "reasoning_effort": "low",
+          "max_completion_tokens": 512
+        },
+        "analyze_coverage": {
+          "reasoning_effort": "low",
+          "max_completion_tokens": 1280
+        },
+        "write_followup": {
+          "reasoning_effort": "low",
+          "max_completion_tokens": 512
+        },
+        "score": {
+          "reasoning_effort": "low",
+          "max_completion_tokens": 512
+        }
+      }
+    },
+    "embeddings": {
+      "provider": "fastembed-local",
+      "model": "BAAI/bge-small-en-v1.5"
+    },
+    "tts": {
+      "provider": "elevenlabs",
+      "model": "eleven_multilingual_v2"
+    }
+  },
+  "claims_summary_en": "The candidate suggests first restarting the server, then scaling up resources such as RAM or using a more powerful server. They mention that poorly written code could be a cause, but admit uncertainty about how Entity Framework or database queries affect performance, and they assume that increasing server capacity will likely improve the endpoint speed.",
+  "retrieved": [
+    {
+      "doc_id": "03_data_access_ef_core.md",
+      "competency": "Data access (EF Core)",
+      "text": "Data access (EF Core)\n\n**N+1 queries** are the classic hotspot: loading a list, then lazily loading a related entity per row = 1 + N round trips. Fix with eager loading (`Include`) or a projection that fetches only what's needed.\n\n**Read paths:** `AsNoTracking()` skips change-tracking overhead for queries that don't update — meaningful on large result sets.\n\n**IQueryable vs IEnumerable:** operations on `IQueryable` translate to SQL and run in the database; once you hit `IEnumerable` (e.g. `.ToList()` too early), the rest runs in memory, often pulling far more rows than needed.\n\n**Other levers:** missing indexes, over-fetching columns, and connection-pool exhaustion. Senior engineers read the generated SQL (logging or a profiler) rather than guessing.",
+      "score": 0.7190556526184082
+    }
+  ],
+  "coverage": [
+    {
+      "competency": "Diagnostic method",
+      "status": "missing",
+      "evidence": null
+    },
+    {
+      "competency": "Data access (EF Core)",
+      "status": "missing",
+      "evidence": null
+    },
+    {
+      "competency": "Async & concurrency",
+      "status": "missing",
+      "evidence": null
+    },
+    {
+      "competency": "Caching & performance",
+      "status": "missing",
+      "evidence": null
+    },
+    {
+      "competency": "Tradeoff & communication",
+      "status": "missing",
+      "evidence": null
+    }
+  ],
+  "decision": {
+    "probe": false,
+    "target": null,
+    "reason": "weak across the board; one probe cannot move it"
+  },
+  "followup_question": null,
+  "score": 1,
+  "justification": "الإجابة عامة ومبنية على تخمينات زي إعادة تشغيل السيرفر أو زيادة الرام بدون قياس أو تحليل فعلي.",
+  "spoken_outputs": [
+    {
+      "label": "verdict",
+      "language": "ar-en",
+      "bytes": 169735,
+      "valid_mp3": true
+    }
+  ]
+}

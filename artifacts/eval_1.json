@@ -1,0 +1,99 @@
+{
+  "provider_configuration": {
+    "stt": {
+      "provider": "elevenlabs",
+      "model": "scribe_v1"
+    },
+    "llm": {
+      "provider": "groq",
+      "model": "openai/gpt-oss-120b",
+      "temperature": 0.0,
+      "top_p": 1.0,
+      "seed": 20260801,
+      "stages": {
+        "summarize": {
+          "reasoning_effort": "low",
+          "max_completion_tokens": 512
+        },
+        "analyze_coverage": {
+          "reasoning_effort": "low",
+          "max_completion_tokens": 1280
+        },
+        "write_followup": {
+          "reasoning_effort": "low",
+          "max_completion_tokens": 512
+        },
+        "score": {
+          "reasoning_effort": "low",
+          "max_completion_tokens": 512
+        }
+      }
+    },
+    "embeddings": {
+      "provider": "fastembed-local",
+      "model": "BAAI/bge-small-en-v1.5"
+    },
+    "tts": {
+      "provider": "elevenlabs",
+      "model": "eleven_multilingual_v2"
+    }
+  },
+  "claims_summary_en": "The candidate would first reproduce the issue and measure it using APM and logs to locate the bottleneck (DB, external call, CPU). They would inspect generated SQL for N+1 queries or missing indexes, add AsNoTracking for read‑only queries, and consider in‑memory then Redis caching with proper invalidation. Finally, they would load‑test to verify the P95 latency. No claim was made regarding .Result and thread‑pool starvation.",
+  "retrieved": [
+    {
+      "doc_id": "05_performance_memory.md",
+      "competency": "Caching & performance",
+      "text": "Caching & performance\n\n**GC generations:** short-lived objects (Gen 0) are cheap to collect; objects promoted to Gen 2 are expensive. High allocation rates in hot paths cause GC pressure and latency spikes.\n\n**Disposal:** wrap `IDisposable` resources (connections, streams) in `using` so they're released promptly; leaked handles look like slow memory growth.\n\n**Caching layers:** in-memory cache is fastest but per-instance; distributed cache (Redis) is shared across instances at the cost of a network hop. Always have an invalidation story.\n\n**Profiling:** measure with a profiler or APM before optimizing. `Span<T>`/`Memory<T>` reduce allocations in hot paths, but only reach for them once a profile shows allocation is the bottleneck.",
+      "score": 0.7511617541313171
+    }
+  ],
+  "coverage": [
+    {
+      "competency": "Diagnostic method",
+      "status": "covered",
+      "evidence": "All right. So the first thing I would do is not change anything yet. I would reproduce the problem and measure it. I would look at our APM and our logs to see where the time actually goes... Then finally I would load test to confirm the P95."
+    },
+    {
+      "competency": "Data access (EF Core)",
+      "status": "covered",
+      "evidence": "I would check the SQL we are generating. I would look for an N+1 pattern or a missing index. And since this endpoint sounds read-only, I would add AsNoTracking to skip the tracking overhead."
+    },
+    {
+      "competency": "Async & concurrency",
+      "status": "missing",
+      "evidence": null
+    },
+    {
+      "competency": "Caching & performance",
+      "status": "covered",
+      "evidence": "If the data is read-heavy and we can tolerate being slightly stale, I would add in-memory cache first and then Redis if we are running multiple instances with clear rule for invalidating that."
+    },
+    {
+      "competency": "Tradeoff & communication",
+      "status": "covered",
+      "evidence": "I would add in-memory cache first and then Redis if we are running multiple instances with clear rule for invalidating that."
+    }
+  ],
+  "decision": {
+    "probe": false,
+    "target": null,
+    "reason": "follow-up budget spent"
+  },
+  "followup_question": "Can you explain why using .Result in an ASP.NET request can cause thread‑pool starvation?",
+  "score": 3,
+  "justification": "The answer correctly outlines measurement, EF Core diagnostics, and caching trade‑offs, but omits async/concurrency considerations.",
+  "spoken_outputs": [
+    {
+      "label": "follow-up",
+      "language": "en",
+      "bytes": 105787,
+      "valid_mp3": true
+    },
+    {
+      "label": "verdict",
+      "language": "en",
+      "bytes": 166809,
+      "valid_mp3": true
+    }
+  ]
+}
